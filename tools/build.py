@@ -128,6 +128,10 @@ def square(c, scale, N):
 
 # ---------------------------------------------------------------- Windows
 WIN_SIZES = [32, 48, 64, 96, 128]          # 100% .. 400% scaling
+# Windows rejects ANI frames whose embedded CUR resource grows beyond its
+# loader's ~64 KiB limit. Keep animation frames small while static cursors
+# retain the full HiDPI size set above.
+WIN_ANIM_SIZES = [32, 48, 64]
 
 
 def _dib(im):
@@ -158,10 +162,13 @@ def write_windows_cursor(c, base):
     if c.frames == 1:
         open(base + '.cur', 'wb').write(_cur([(N, hx, hy, _dib(fr[0])) for N, (fr, hx, hy) in zip(WIN_SIZES, per)]))
         return os.path.basename(base) + '.cur'
-    icons = [_cur([(N, hx, hy, _dib(fr[k])) for N, (fr, hx, hy) in zip(WIN_SIZES, per)]) for k in range(c.frames)]
+    anim_per = [square(c, N / 32, N) for N in WIN_ANIM_SIZES]
+    icons = [_cur([(N, hx, hy, _dib(fr[k])) for N, (fr, hx, hy) in zip(WIN_ANIM_SIZES, anim_per)]) for k in range(c.frames)]
+    if any(len(icon) > 0xFFFF for icon in icons):
+        raise ValueError(f'ANI frame for {c.name} exceeds the Windows 64 KiB limit')
     jiffies = max(1, round(c.delay * 60))
     chunk = lambda t, d: t + struct.pack('<I', len(d)) + d + (b'\0' if len(d) % 2 else b'')
-    anih = struct.pack('<9I', 36, c.frames, c.frames, 0, 0, 0, 0, jiffies, 1)
+    anih = struct.pack('<9I', 36, c.frames, c.frames, 0, 0, 32, 1, jiffies, 1)
     body = b'ACON' + chunk(b'anih', anih) + chunk(b'LIST', b'fram' + b''.join(chunk(b'icon', i) for i in icons))
     open(base + '.ani', 'wb').write(b'RIFF' + struct.pack('<I', len(body)) + body)
     return os.path.basename(base) + '.ani'
