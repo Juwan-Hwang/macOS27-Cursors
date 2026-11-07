@@ -18,7 +18,7 @@ To undo: **Mousecape → Reset to Default**.
 
 The reload step matters: writing the registry alone (the classic `.inf` route) leaves the running session showing the old pointers until something forces a reload, so the script calls `SystemParametersInfo` with `SPI_SETCURSORS` at the end. Cursors that have no Windows role (open/closed hand, copy, alias, zoom, etc.) can be assigned manually with **Browse…** in Mouse settings.
 
-Each static `.cur` file contains 32, 48, 64, 96 and 128 px images. Animated `.ani` frames use 32, 48 and 64 px images because Windows rejects larger embedded animation frames. This keeps the animated cursors loadable while preserving the full size set for static cursors.
+Each `.cur` file and each frame of the animated `.ani` files contains 32, 48, 64, 96 and 128 px images, so the cursors stay sharp at any display scaling and pointer size. The animation frames store those images PNG-compressed (lossless), because a raw frame is too large for the Windows cursor loader to accept.
 
 To undo: choose the *Windows Default* scheme and click **Apply**.
 

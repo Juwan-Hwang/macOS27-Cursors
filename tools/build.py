@@ -128,10 +128,11 @@ def square(c, scale, N):
 
 # ---------------------------------------------------------------- Windows
 WIN_SIZES = [32, 48, 64, 96, 128]          # 100% .. 400% scaling
-# Windows rejects ANI frames whose embedded CUR resource grows beyond its
-# loader's ~64 KiB limit. Keep animation frames small while static cursors
-# retain the full HiDPI size set above.
-WIN_ANIM_SIZES = [32, 48, 64]
+# Windows refuses to load an ANI frame whose embedded CUR resource is too
+# large (a raw frame with all five sizes above is ~136 KiB and fails).
+# Animation frames therefore store the same images PNG-compressed, which is
+# lossless: every size, the hot spots and the frame timing stay identical
+# to the static cursors, only each frame shrinks below the loader's limit.
 
 
 def _dib(im):
@@ -149,6 +150,10 @@ def _dib(im):
     return header + bytes(xor) + bytes(mask)
 
 
+def _png(im):
+    buf = io.BytesIO(); im.save(buf, 'PNG'); return buf.getvalue()
+
+
 def _cur(entries):
     offset, dirs, body = 6 + 16 * len(entries), b'', b''
     for N, hx, hy, data in entries:
@@ -162,13 +167,12 @@ def write_windows_cursor(c, base):
     if c.frames == 1:
         open(base + '.cur', 'wb').write(_cur([(N, hx, hy, _dib(fr[0])) for N, (fr, hx, hy) in zip(WIN_SIZES, per)]))
         return os.path.basename(base) + '.cur'
-    anim_per = [square(c, N / 32, N) for N in WIN_ANIM_SIZES]
-    icons = [_cur([(N, hx, hy, _dib(fr[k])) for N, (fr, hx, hy) in zip(WIN_ANIM_SIZES, anim_per)]) for k in range(c.frames)]
+    icons = [_cur([(N, hx, hy, _png(fr[k])) for N, (fr, hx, hy) in zip(WIN_SIZES, per)]) for k in range(c.frames)]
     if any(len(icon) > 0xFFFF for icon in icons):
         raise ValueError(f'ANI frame for {c.name} exceeds the Windows 64 KiB limit')
     jiffies = max(1, round(c.delay * 60))
     chunk = lambda t, d: t + struct.pack('<I', len(d)) + d + (b'\0' if len(d) % 2 else b'')
-    anih = struct.pack('<9I', 36, c.frames, c.frames, 0, 0, 32, 1, jiffies, 1)
+    anih = struct.pack('<9I', 36, c.frames, c.frames, 0, 0, 0, 0, jiffies, 1)
     body = b'ACON' + chunk(b'anih', anih) + chunk(b'LIST', b'fram' + b''.join(chunk(b'icon', i) for i in icons))
     open(base + '.ani', 'wb').write(b'RIFF' + struct.pack('<I', len(body)) + body)
     return os.path.basename(base) + '.ani'
@@ -259,7 +263,10 @@ def build_linux(cursors):
     for src, names in X_ALIASES.items():
         for a in names:
             if not os.path.lexists(os.path.join(cd, a)):
-                os.symlink(src, os.path.join(cd, a))
+                # Real copies, not symlinks: a symlink alias arrives as a
+                # broken text file if the package is extracted by a tool
+                # that does not restore symlinks, and the cursor goes missing.
+                shutil.copyfile(os.path.join(cd, src), os.path.join(cd, a))
     open(os.path.join(d, 'index.theme'), 'w').write(
         f'[Icon Theme]\nName={THEME}\nComment=macOS 27 Golden Gate cursors\n')
     sh = os.path.join(d, 'install.sh')
